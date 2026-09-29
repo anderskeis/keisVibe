@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "keis.vibe",
+  "name": "Vibe Launcher",
+  "version": "1.0.0",
+  "author": "keis",
+  "license": "MIT",
+  "description": "Launch and resume Mistral Vibe sessions from the Omarchy bar.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Vibe",
+    "description": "New, continue, or choose a Mistral Vibe session.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "workDirectory": "~/Work"
+    },
+    "schema": [
+      {
+        "key": "workDirectory",
+        "type": "path",
+        "label": "Working directory",
+        "defaultValue": "~/Work",
+        "description": "Directory where Vibe starts. Use an absolute path or ~/path. The default uses home if ~/Work does not exist."
+      }
+    ]
+  }
+}
