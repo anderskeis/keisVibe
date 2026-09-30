@@ -20,6 +20,7 @@ Panel {
   property string pickedDirectory: ""
   property bool pickerMode: false
   property string dirError: ""
+  property int completionSerial: 0
 
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -148,6 +149,11 @@ Panel {
   function closePicker() {
     dirError = ""
     pickerMode = false
+    // The field keeps activeFocus when the box hides, which would leave
+    // main-panel keys dead. Hand focus back to the panel key catcher.
+    Qt.callLater(function() {
+      if (!pickerMode && keyCatcher) keyCatcher.forceActiveFocus()
+    })
   }
 
   // Accepts a typed path, expands ~, validates accessibility, then uses and
@@ -189,6 +195,75 @@ Panel {
     closePicker()
   }
 
+  // Shell-style Tab completion for the directory box. Completes the last
+  // path segment against the subdirectories of the segment before it:
+  // a unique match completes fully with a trailing slash, several matches
+  // extend to their longest common prefix, and nothing happens when the
+  // typed text cannot be extended. Matching is case-insensitive but always
+  // inserts real-case names. Hidden folders are never offered. Tab on an
+  // empty field starts from ~.
+  function requestCompletion() {
+    if (completionProc.running) return
+    var text = dirField.text
+    if (text.trim() === "" || text === "~") {
+      dirField.text = "~/"
+      dirField.cursorPosition = dirField.text.length
+      return
+    }
+    var slash = text.lastIndexOf("/")
+    if (slash < 0) return
+    var dirPart = text.substring(0, slash + 1)
+    var prefix = text.substring(slash + 1)
+    var expanded = expandDirPart(dirPart)
+    if (expanded === "") return
+    completionSerial += 1
+    completionProc.activeSerial = completionSerial
+    completionProc.dirPart = dirPart
+    completionProc.prefix = prefix
+    completionProc.command = [
+      "bash", "-c",
+      'find "$1" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -5000 | LC_ALL=C sort',
+      "vibe-directory-complete", expanded
+    ]
+    completionProc.running = true
+  }
+
+  function expandDirPart(dirPart) {
+    if (dirPart.indexOf("~/") === 0) return homePath + dirPart.substring(1)
+    if (dirPart[0] === "/") return dirPart
+    return ""
+  }
+
+  function commonPrefix(names) {
+    var prefix = names[0]
+    for (var i = 1; i < names.length; i++) {
+      var next = names[i]
+      var j = 0
+      while (j < prefix.length && j < next.length && prefix[j] === next[j]) j++
+      prefix = prefix.substring(0, j)
+    }
+    return prefix
+  }
+
+  function applyCompletion(dirPart, prefix, matches) {
+    var wanted = prefix.toLowerCase()
+    var realNames = []
+    for (var i = 0; i < matches.length; i++) {
+      var name = matches[i]
+      if (name.indexOf("/") >= 0) name = name.substring(name.lastIndexOf("/") + 1)
+      if (name.length === 0 || name[0] === ".") continue
+      if (name.toLowerCase().indexOf(wanted) !== 0) continue
+      realNames.push(name)
+    }
+    if (realNames.length === 0) return
+    var completed = realNames.length === 1
+      ? realNames[0]
+      : commonPrefix(realNames)
+    if (completed === prefix || completed === "") return
+    dirField.text = dirPart + completed + (realNames.length === 1 ? "/" : "")
+    dirField.cursorPosition = dirField.text.length
+  }
+
   // Persist a workDirectory choice through the shell's setBarWidget IPC.
   // Settings-only changes patch the running widget in place, so the panel
   // stays open and root.setting("workDirectory") reflects the new value.
@@ -218,6 +293,7 @@ Panel {
       pickerMode: pickerMode,
       dirError: dirError,
       pickedDirectory: pickedDirectory,
+      dirText: pickerMode ? dirField.text : "",
       selectedIndex: selectedIndex,
       workDirectory: root.setting("workDirectory", "~/Work")
     })
@@ -276,6 +352,23 @@ Panel {
       var value = queuedValue
       queuedValue = ""
       root.startPersistWorkDirectory(value)
+    }
+  }
+
+  Process {
+    id: completionProc
+    property int activeSerial: 0
+    property string dirPart: ""
+    property string prefix: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (completionProc.activeSerial !== root.completionSerial) return
+        if (!root.pickerMode) return
+        var lines = String(text || "").split("\n")
+        while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
+        root.applyCompletion(completionProc.dirPart, completionProc.prefix, lines)
+      }
     }
   }
 
@@ -439,6 +532,7 @@ Panel {
             font.family: root.contentFontFamily
             foreground: root.contentForeground
             Keys.onEscapePressed: root.closePicker()
+            Keys.onTabPressed: root.requestCompletion()
             onAccepted: root.confirmDirectory(text)
             onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
           }
@@ -468,7 +562,7 @@ Panel {
           textFormat: Text.PlainText
           width: parent.width
           text: root.pickerMode
-            ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Esc Cancel")
+            ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Tab Complete   Esc Cancel")
             : root.launchError !== "" ? root.launchError
             : !root.availabilityChecked ? "Checking for Vibe..."
             : root.vibeInstalled ? "N New   C Last   R Pick   D Dir   X Reset   Tab Switch   Esc Close"

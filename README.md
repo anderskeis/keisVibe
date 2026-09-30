@@ -21,6 +21,10 @@ starting a session. It is prefilled with the current directory:
 
 - Type a path — `~/Projects` or an absolute path — and press `Enter` or
   click **Use this directory**
+- `Tab` completes the current path segment like a shell: a unique match
+  completes fully, several matches extend to their longest common prefix,
+  and matching is case-insensitive. Hidden folders are never offered.
+  `Tab` on an empty field starts from `~`
 - **Reset to default** (or press `X` in the main panel) restores the
   `~/Work`-or-home default
 - `Esc` cancels without changing anything
