@@ -8,25 +8,25 @@ Omarchy Quattro. Click **Vibe** to open a small, keyboard-friendly panel:
 - **New session** (`N`) starts an interactive Vibe session.
 - **Continue last session** (`C`) runs `vibe --continue`.
 - **Choose a session** (`R`) opens Vibe's `--resume` picker.
-- **Directory** (`D`) opens a directory picker to choose where Vibe starts.
+- **Directory** (`D`) opens a directory box to set where Vibe starts.
 
 Use Up/Down and Enter to choose an action, Esc to close the panel, and Tab to
 switch to a neighboring bar panel. Sessions launch in `~/Work` if it exists,
 otherwise in your home directory.
 
-## Pick the working directory
+## Set the working directory in the panel
 
-Press `D` (or click the directory row) to browse for a directory before
-starting a session. The picker starts at the configured working directory
-(or `~/Work`/home by default), lists subdirectories, and hides dotfolders:
+Press `D` (or click the directory row) to open a directory box before
+starting a session. It is prefilled with the current directory:
 
-- `Up`/`Down` move, `Enter` opens a subdirectory, `Left` or `..` goes up
-- **Use this directory** confirms the choice; `Esc` cancels
-- Back in the panel, launches use the picked directory; press `X` to reset
-  to the configured default
+- Type a path — `~/Projects` or an absolute path — and press `Enter` or
+  click **Use this directory**
+- **Reset to default** (or press `X` in the main panel) restores the
+  `~/Work`-or-home default
+- `Esc` cancels without changing anything
 
-The picked directory lasts until the bar reloads. To pin a permanent
-default, set `workDirectory` as described below. The widget reports when Vibe is not
+The confirmed choice is saved to the widget's `workDirectory` setting, so
+it persists across bar reloads and reboots. The widget reports when Vibe is not
 installed or a configured directory cannot be accessed; it never installs
 software or reads credentials on its own.
 
@@ -40,7 +40,9 @@ qs -p /usr/share/omarchy/shell ipc call keis.vibe toggle
 ```
 
 Bind that command in `~/.config/hypr/bindings.lua` to summon the launcher
-with a keyboard shortcut.
+with a keyboard shortcut. `ipc call keis.vibe pick` jumps straight to the
+directory box; `ipc call keis.vibe state` prints the panel's current state
+as JSON.
 
 ## Requirements
 
@@ -85,9 +87,9 @@ omarchy bar set keis.vibe workDirectory '~/Projects/My Project'
 
 The setting is stored with the widget in `~/.config/omarchy/shell.json`.
 The chosen directory must already exist and be accessible; otherwise the
-panel shows an error instead of launching. The directory picker (`D`) is
-the quick way to pick per-launch; the setting is the persistent default.
-Set it back to `~/Work` (or an empty string) to restore the default
+panel shows an error instead of launching. The directory box (`D`) edits this
+same setting; setting it from the CLI pins a default without opening the
+panel. Set it back to `~/Work` (or an empty string) to restore the default
 Work-or-home behavior:
 
 ```sh

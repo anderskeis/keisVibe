@@ -19,18 +19,11 @@ Panel {
   property string pendingDirectory: ""
   property string pickedDirectory: ""
   property bool pickerMode: false
-  property string browsePath: ""
-  property var browseEntries: []
-  property int browseIndex: 0
-  property int browseSerial: 0
-  property string browseError: ""
+  property string dirError: ""
 
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string homePath: Quickshell.env("HOME") || ""
-  readonly property bool browseHasParent: browsePath !== "" && browsePath !== "/"
-  readonly property int browseEntryOffset: browseHasParent ? 2 : 1
-  readonly property int browseRowCount: browseEntryOffset + browseEntries.length
 
   function refreshAvailability() {
     availabilityChecked = false
@@ -46,7 +39,7 @@ Panel {
   function close() {
     pendingLaunchIndex = -1
     pendingDirectory = ""
-    closePicker()
+    pickerMode = false
     root.controller.hide()
   }
 
@@ -69,17 +62,6 @@ Panel {
     return homePath !== "" && path.indexOf(homePath) === 0
       ? "~" + path.substring(homePath.length)
       : path
-  }
-
-  function parentOf(path) {
-    if (path === "" || path === "/") return ""
-    var idx = path.lastIndexOf("/")
-    if (idx <= 0) return "/"
-    return path.substring(0, idx)
-  }
-
-  function shorten(text, max) {
-    return text.length <= max ? text : "..." + text.substring(text.length - max + 1)
   }
 
   function displayDirectory() {
@@ -145,87 +127,84 @@ Panel {
     root.close()
   }
 
-  function browseStartPath() {
-    if (pickedDirectory !== "") return pickedDirectory
-    var resolved = resolveConfiguredDirectory()
-    return resolved.indexOf("error:") === 0 ? "" : resolved
+  function directoryPrefill() {
+    if (pickedDirectory !== "") return tildePath(pickedDirectory)
+    var configured = root.setting("workDirectory", "~/Work")
+    return typeof configured === "string" && configured !== "" ? configured : "~/Work"
   }
 
   function openPicker() {
-    browseError = ""
+    if (!root.opened) root.open()
+    dirError = ""
+    dirField.text = directoryPrefill()
     pickerMode = true
-    browseDirectory("")
   }
 
   function closePicker() {
+    dirError = ""
     pickerMode = false
-    browseSerial += 1
-    browseProc.activeSerial = 0
-    browsePath = ""
-    browseEntries = []
-    browseIndex = 0
   }
 
-  function browseDirectory(path) {
-    browseError = ""
-    browseEntries = []
-    browseIndex = 0
-    var serial = root.browseSerial + 1
-    root.browseSerial = serial
-    if (browseProc.running) {
-      browseProc.queuedSerial = serial
-      browseProc.queuedPath = path
+  // Accepts a typed path, expands ~, validates accessibility, then uses and
+  // persists it. Empty input is an error; "Reset to default" clears instead.
+  function confirmDirectory(input) {
+    dirError = ""
+    var text = String(input || "").trim()
+    if (text === "") {
+      dirError = "Enter a path like ~/Projects or /home/you/Projects."
       return
     }
-    startBrowse(serial, path)
-  }
-
-  function startBrowse(serial, path) {
-    browseProc.activeSerial = serial
-    browseProc.command = [
+    var directory = ""
+    if (text === "~") directory = homePath
+    else if (text.indexOf("~/") === 0) directory = homePath + text.substring(1)
+    else if (text[0] === "/") directory = text
+    else {
+      dirError = "Use an absolute path or ~/path."
+      return
+    }
+    if (directory === "") {
+      dirError = "Cannot resolve your home directory."
+      return
+    }
+    dirValidate.pendingPath = directory
+    dirValidate.command = [
       "bash", "-c",
-      'start="$1"; configured="$2"; if [ -z "$start" ]; then if [ -n "$configured" ] && [ -d "$configured" ]; then start="$configured"; elif [ -d "$HOME/Work" ]; then start="$HOME/Work"; else start="$HOME"; fi; fi; echo "$start"; find "$start" -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | LC_ALL=C sort',
-      "vibe-directory-browse", path, browseStartPath()
+      'test -d "$1" && test -r "$1" && test -x "$1"',
+      "vibe-directory-validate", directory
     ]
-    browseProc.running = true
+    dirValidate.running = true
   }
 
-  function pickerMove(direction) {
-    if (browseRowCount === 0) return
-    browseIndex = (browseIndex + direction + browseRowCount) % browseRowCount
-  }
-
-  function pickerActivate(row) {
-    if (!pickerMode) return
-    if (row === 0) {
-      if (browsePath === "") return
-      pickedDirectory = browsePath
-      launchError = ""
-      closePicker()
-      return
-    }
-    if (browseHasParent && row === 1) {
-      browseDirectory(parentOf(browsePath))
-      return
-    }
-    var i = row - browseEntryOffset
-    if (i >= 0 && i < browseEntries.length) browseDirectory(browseEntries[i])
-  }
-
-  function pickerNavigate(dx) {
-    if (dx < 0 && browseHasParent) browseDirectory(parentOf(browsePath))
-    else if (dx > 0) pickerActivate(browseIndex)
-  }
-
-  function pickerEntryName(path) {
-    var idx = path.lastIndexOf("/")
-    return idx >= 0 ? path.substring(idx + 1) : path
-  }
-
-  function clearPickedDirectory() {
-    if (pickedDirectory === "") return
+  function resetDirectory() {
     pickedDirectory = ""
     launchError = ""
+    dirError = ""
+    persistWorkDirectory("~/Work")
+    closePicker()
+  }
+
+  // Persist a workDirectory choice through the shell's setBarWidget IPC.
+  // Settings-only changes patch the running widget in place, so the panel
+  // stays open and root.setting("workDirectory") reflects the new value.
+  // pickedDirectory mirrors it until that update lands.
+  function persistWorkDirectory(value) {
+    persistProc.command = [
+      "omarchy-shell", "-q", "shell", "setBarWidget", root.moduleName,
+      "workDirectory", JSON.stringify(value), "{}"
+    ]
+    persistProc.running = true
+  }
+
+  // Exposed through the keis.vibe IPC target for keybindings and debugging.
+  function debugState(): string {
+    return JSON.stringify({
+      opened: root.opened,
+      pickerMode: pickerMode,
+      dirError: dirError,
+      pickedDirectory: pickedDirectory,
+      selectedIndex: selectedIndex,
+      workDirectory: root.setting("workDirectory", "~/Work")
+    })
   }
 
   Process {
@@ -256,36 +235,25 @@ Panel {
   }
 
   Process {
-    id: browseProc
-    property int activeSerial: 0
-    property int queuedSerial: 0
-    property string queuedPath: ""
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        if (browseProc.activeSerial !== root.browseSerial) return
-        var lines = String(text || "").split("\n")
-        while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
-        if (lines.length === 0) {
-          root.browseError = "Cannot browse directories."
-          return
-        }
-        root.browsePath = lines[0]
-        var entries = []
-        for (var i = 1; i < lines.length; i++) entries.push(lines[i])
-        root.browseEntries = entries
-        root.browseIndex = 0
-      }
-    }
+    id: dirValidate
+    property string pendingPath: ""
     onExited: function(exitCode) {
-      var serial = browseProc.queuedSerial
-      var path = browseProc.queuedPath
-      browseProc.activeSerial = 0
-      browseProc.queuedSerial = 0
-      browseProc.queuedPath = ""
-      if (serial > 0 && serial === root.browseSerial)
-        root.startBrowse(serial, path)
+      if (pendingPath === "") return
+      var directory = pendingPath
+      pendingPath = ""
+      if (exitCode !== 0) {
+        root.dirError = "Not an accessible directory: " + root.tildePath(directory)
+        return
+      }
+      root.pickedDirectory = directory
+      root.launchError = ""
+      root.persistWorkDirectory(directory)
+      root.closePicker()
     }
+  }
+
+  Process {
+    id: persistProc
   }
 
   KeyboardPanel {
@@ -301,18 +269,17 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      // The directory box owns input while it is open; its TextField handles
+      // Enter (confirm) and Esc (cancel) itself.
+      blocked: root.pickerMode
       onCloseRequested: if (root.pickerMode) root.closePicker(); else root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
-        if (root.pickerMode) {
-          if (dy !== 0) root.pickerMove(dy)
-          else if (dx !== 0) root.pickerNavigate(dx)
-        } else if (dy !== 0) {
-          root.moveSelection(dy)
-        }
+        if (root.pickerMode) return
+        if (dy !== 0) root.moveSelection(dy)
       }
-      onActivateRequested: if (root.pickerMode) root.pickerActivate(root.browseIndex); else root.launch(root.selectedIndex)
-      onDeleteRequested: if (!root.pickerMode) root.clearPickedDirectory()
+      onActivateRequested: if (!root.pickerMode) root.launch(root.selectedIndex)
+      onDeleteRequested: if (!root.pickerMode) root.resetDirectory()
       onTextKey: function(text) {
         if (root.pickerMode) return
         var key = text.toLowerCase()
@@ -397,7 +364,7 @@ Panel {
 
           Button {
             width: parent.width
-            text: root.shorten("Directory: " + root.displayDirectory(), 40)
+            text: "Directory: " + root.displayDirectory()
             iconText: root.pickedDirectory !== "" ? "\uf07c" : "\uf07b"
             leftAlign: true
             fontSize: Style.font.bodySmall
@@ -416,7 +383,7 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: "CHOOSE DIRECTORY"
+            text: "WORKING DIRECTORY"
             color: Color.accent
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.subtitle
@@ -426,14 +393,12 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: root.browseError !== "" ? root.browseError
-              : root.browsePath === "" ? "Loading..."
-              : root.shorten(root.tildePath(root.browsePath), 42)
-            color: root.browseError !== "" ? Color.urgent : root.contentForeground
+            text: "Where Vibe sessions start. The choice is saved to the workDirectory setting."
+            color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
-            opacity: root.browseError !== "" ? 1.0 : 0.75
+            opacity: 0.75
           }
 
           Rectangle {
@@ -443,6 +408,18 @@ Panel {
             opacity: 0.45
           }
 
+          TextField {
+            id: dirField
+            width: parent.width
+            placeholderText: "~/Projects"
+            text: ""
+            font.family: root.contentFontFamily
+            foreground: root.contentForeground
+            Keys.onEscapePressed: root.closePicker()
+            onAccepted: root.confirmDirectory(text)
+            onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
+          }
+
           Button {
             width: parent.width
             text: "Use this directory"
@@ -450,54 +427,17 @@ Panel {
             leftAlign: true
             fontSize: Style.font.bodySmall
             foreground: root.contentForeground
-            hasCursor: root.browseIndex === 0
-            enabled: root.browsePath !== "" && root.browseError === ""
-            onHovered: function(isHovered) { if (isHovered) root.browseIndex = 0 }
-            onClicked: root.pickerActivate(0)
+            onClicked: root.confirmDirectory(dirField.text)
           }
 
           Button {
             width: parent.width
-            visible: root.browseHasParent
-            text: ".."
-            iconText: "\uf062"
+            text: "Reset to default (~Work or home)"
+            iconText: "\uf0e2"
             leftAlign: true
             fontSize: Style.font.bodySmall
             foreground: root.contentForeground
-            hasCursor: root.browseHasParent && root.browseIndex === 1
-            onHovered: function(isHovered) { if (isHovered && root.browseHasParent) root.browseIndex = 1 }
-            onClicked: if (root.browseHasParent) root.pickerActivate(1)
-          }
-
-          Repeater {
-            model: root.browseEntries.length
-
-            Button {
-              id: entryButton
-              required property int index
-              width: parent.width
-              text: root.shorten(root.pickerEntryName(root.browseEntries[index]), 30)
-              iconText: "\uf07b"
-              leftAlign: true
-              fontSize: Style.font.bodySmall
-              foreground: root.contentForeground
-              hasCursor: root.browseIndex === root.browseEntryOffset + index
-              onHovered: function(isHovered) {
-                if (isHovered) root.browseIndex = root.browseEntryOffset + index
-              }
-              onClicked: root.pickerActivate(root.browseEntryOffset + index)
-            }
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            width: parent.width
-            visible: root.browseError === "" && root.browsePath !== "" && root.browseEntries.length === 0
-            text: "No subdirectories."
-            color: root.contentForeground
-            font.family: root.contentFontFamily
-            font.pixelSize: Style.font.bodySmall
-            opacity: 0.5
+            onClicked: root.resetDirectory()
           }
         }
 
@@ -505,16 +445,20 @@ Panel {
           textFormat: Text.PlainText
           width: parent.width
           text: root.pickerMode
-            ? "Enter Select   \u2192 Open   \u2190 Up   Esc Back"
+            ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Esc Cancel")
             : root.launchError !== "" ? root.launchError
             : !root.availabilityChecked ? "Checking for Vibe..."
             : root.vibeInstalled ? "N New   C Last   R Pick   D Dir   X Reset   Tab Switch   Esc Close"
             : "Vibe not found. Install it with: uv tool install mistral-vibe"
-          color: root.launchError !== "" && !root.pickerMode ? Color.urgent : root.contentForeground
+          color: root.dirError !== "" && root.pickerMode
+            ? Color.urgent
+            : root.launchError !== "" && !root.pickerMode ? Color.urgent : root.contentForeground
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
-          opacity: root.launchError !== "" && !root.pickerMode ? 1.0 : 0.75
+          opacity: root.dirError !== "" && root.pickerMode
+            ? 1.0
+            : root.launchError !== "" && !root.pickerMode ? 1.0 : 0.75
         }
       }
     }

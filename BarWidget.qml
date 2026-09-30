@@ -60,6 +60,15 @@ BarWidget {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function pick(): string {
+      if (!panelLoader.item) return "no panel"
+      panelLoader.item.openPicker()
+      return "ok"
+    }
+    function state(): string {
+      if (!panelLoader.item) return "no panel"
+      return panelLoader.item.debugState()
+    }
   }
 
   WidgetButton {
