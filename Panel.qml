@@ -64,6 +64,11 @@ Panel {
       : path
   }
 
+  function shorten(text, max) {
+    if (text.length <= max) return text
+    return text.substring(0, Math.max(1, max - 10)) + "..." + text.substring(text.length - 6)
+  }
+
   function displayDirectory() {
     if (pickedDirectory !== "") return tildePath(pickedDirectory)
     var configured = root.setting("workDirectory", "~/Work")
@@ -148,6 +153,7 @@ Panel {
   // Accepts a typed path, expands ~, validates accessibility, then uses and
   // persists it. Empty input is an error; "Reset to default" clears instead.
   function confirmDirectory(input) {
+    if (dirValidate.running) return
     dirError = ""
     var text = String(input || "").trim()
     if (text === "") {
@@ -186,8 +192,18 @@ Panel {
   // Persist a workDirectory choice through the shell's setBarWidget IPC.
   // Settings-only changes patch the running widget in place, so the panel
   // stays open and root.setting("workDirectory") reflects the new value.
-  // pickedDirectory mirrors it until that update lands.
+  // pickedDirectory mirrors it until that update lands. A write issued while
+  // one is in flight queues as the latest value instead of being dropped,
+  // so a quick pick followed by a reset still ends at the reset value.
   function persistWorkDirectory(value) {
+    if (persistProc.running) {
+      persistProc.queuedValue = value
+      return
+    }
+    startPersistWorkDirectory(value)
+  }
+
+  function startPersistWorkDirectory(value) {
     persistProc.command = [
       "omarchy-shell", "-q", "shell", "setBarWidget", root.moduleName,
       "workDirectory", JSON.stringify(value), "{}"
@@ -254,6 +270,13 @@ Panel {
 
   Process {
     id: persistProc
+    property string queuedValue: ""
+    onExited: function(exitCode) {
+      if (queuedValue === "") return
+      var value = queuedValue
+      queuedValue = ""
+      root.startPersistWorkDirectory(value)
+    }
   }
 
   KeyboardPanel {
@@ -364,7 +387,7 @@ Panel {
 
           Button {
             width: parent.width
-            text: "Directory: " + root.displayDirectory()
+            text: root.shorten("Directory: " + root.displayDirectory(), 34)
             iconText: root.pickedDirectory !== "" ? "\uf07c" : "\uf07b"
             leftAlign: true
             fontSize: Style.font.bodySmall
