@@ -19,8 +19,7 @@ otherwise in your home directory.
 Press `D` (or click the directory row) to open a directory box before
 starting a session. It is prefilled with the current directory:
 
-- Type a path — `~/Projects` or an absolute path — and press `Enter` or
-  click **Use this directory**
+- Type a path — `~/Projects` or an absolute path — and press `Enter`
 - `Tab` completes the current path segment like a shell: a unique match
   completes fully, several matches extend to their longest common prefix,
   and matching is case-insensitive. Hidden folders are never offered.
