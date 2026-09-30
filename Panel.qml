@@ -509,7 +509,7 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: "Where Vibe sessions start. The choice is saved to the workDirectory setting."
+            text: "Where Vibe sessions start."
             color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.bodySmall
@@ -539,16 +539,6 @@ Panel {
 
           Button {
             width: parent.width
-            text: "Use this directory"
-            iconText: "\uf00c"
-            leftAlign: true
-            fontSize: Style.font.bodySmall
-            foreground: root.contentForeground
-            onClicked: root.confirmDirectory(dirField.text)
-          }
-
-          Button {
-            width: parent.width
             text: "Reset to default (~Work or home)"
             iconText: "\uf0e2"
             leftAlign: true
@@ -565,7 +555,7 @@ Panel {
             ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Tab Complete   Esc Cancel")
             : root.launchError !== "" ? root.launchError
             : !root.availabilityChecked ? "Checking for Vibe..."
-            : root.vibeInstalled ? "N New   C Last   R Pick   D Dir   X Reset   Tab Switch   Esc Close"
+            : root.vibeInstalled ? "↑↓ Move   Tab Switch   Esc Close"
             : "Vibe not found. Install it with: uv tool install mistral-vibe"
           color: root.dirError !== "" && root.pickerMode
             ? Color.urgent
