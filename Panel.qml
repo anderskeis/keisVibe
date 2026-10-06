@@ -12,11 +12,15 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property string agent: "vibe"
+  // Left/Right cycles the picker through these in order.
+  readonly property var agentOrder: ["vibe", "copilot", "agy"]
   property bool vibeChecked: false
   property bool copilotChecked: false
-  readonly property bool availabilityChecked: vibeChecked && copilotChecked
+  property bool agyChecked: false
+  readonly property bool availabilityChecked: vibeChecked && copilotChecked && agyChecked
   property bool vibeInstalled: false
   property bool copilotInstalled: false
+  property bool agyInstalled: false
   property int selectedIndex: 0
   property string launchError: ""
   property int pendingLaunchIndex: -1
@@ -33,9 +37,11 @@ Panel {
   function refreshAvailability() {
     vibeChecked = false
     copilotChecked = false
+    agyChecked = false
     launchError = ""
     if (!vibeCheck.running) vibeCheck.running = true
     if (!copilotCheck.running) copilotCheck.running = true
+    if (!agyCheck.running) agyCheck.running = true
   }
 
   function open() {
@@ -60,19 +66,30 @@ Panel {
   }
 
   function agentInstalled() {
-    return agent === "copilot" ? copilotInstalled : vibeInstalled
+    if (agent === "copilot") return copilotInstalled
+    if (agent === "agy") return agyInstalled
+    return vibeInstalled
   }
 
   function agentMissingHint() {
-    return agent === "copilot"
-      ? "Copilot not found. Get it from: github.com/github/copilot-cli/releases"
-      : "Vibe not found. Install it with: uv tool install mistral-vibe"
+    if (agent === "copilot")
+      return "Copilot not found. Get it from: github.com/github/copilot-cli/releases"
+    if (agent === "agy")
+      return "Agy not found. Install it with: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+    return "Vibe not found. Install it with: uv tool install mistral-vibe"
   }
 
   function selectAgent(nextAgent) {
     if (agent === nextAgent) return
     agent = nextAgent
     launchError = ""
+  }
+
+  function cycleAgent(direction) {
+    var count = agentOrder.length
+    var index = agentOrder.indexOf(agent)
+    if (index < 0) index = 0
+    selectAgent(agentOrder[((index + direction) % count + count) % count])
   }
 
   function tildePath(path) {
@@ -115,6 +132,12 @@ Panel {
       launchError = agentMissingHint()
       return
     }
+    // Agy has no launch-time session picker; its /resume picker only works
+    // as a slash command inside a running session.
+    if (agent === "agy" && index === 2) {
+      launchError = "Agy chooses sessions with /resume inside a session."
+      return
+    }
 
     var directory = ""
     if (pickedDirectory !== "") {
@@ -139,8 +162,10 @@ Panel {
   }
 
   function launchAgent(index, directory) {
-    var agentCommand = agent === "copilot" ? "copilot" : "vibe"
-    var agentAppId = agent === "copilot" ? "org.omarchy.copilot" : "org.omarchy.vibe"
+    var agentCommand = agent === "copilot" ? "copilot" : agent === "agy" ? "agy" : "vibe"
+    var agentAppId = agent === "copilot"
+      ? "org.omarchy.copilot"
+      : agent === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
     var command = [
       "bash", "-lc",
@@ -337,6 +362,15 @@ Panel {
   }
 
   Process {
+    id: agyCheck
+    command: ["bash", "-lc", "command -v agy >/dev/null 2>&1"]
+    onExited: function(exitCode) {
+      root.agyInstalled = exitCode === 0
+      root.agyChecked = true
+    }
+  }
+
+  Process {
     id: directoryCheck
     onExited: function(exitCode) {
       if (root.pendingLaunchIndex < 0) return
@@ -420,7 +454,7 @@ Panel {
       onMoveRequested: function(dx, dy) {
         if (root.pickerMode) return
         if (dy !== 0) root.moveSelection(dy)
-        else if (dx !== 0) root.selectAgent(root.agent === "vibe" ? "copilot" : "vibe")
+        else if (dx !== 0) root.cycleAgent(dx > 0 ? 1 : -1)
       }
       onActivateRequested: if (!root.pickerMode) root.launch(root.selectedIndex)
       onTextKey: function(text) {
@@ -432,6 +466,7 @@ Panel {
         else if (key === "d") root.openPicker()
         else if (key === "v") root.selectAgent("vibe")
         else if (key === "g") root.selectAgent("copilot")
+        else if (key === "a") root.selectAgent("agy")
       }
 
       Column {
@@ -447,7 +482,11 @@ Panel {
           ButtonGroup {
             width: parent.width
             value: root.agent
-            options: [{ value: "vibe", label: "Vibe" }, { value: "copilot", label: "GH Copilot" }]
+            options: [
+              { value: "vibe", label: "Vibe" },
+              { value: "copilot", label: "GH Copilot" },
+              { value: "agy", label: "Agy" }
+            ]
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
             onChanged: function(value) { root.selectAgent(value) }
@@ -456,7 +495,9 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: root.agent === "copilot" ? "GITHUB COPILOT" : "MISTRAL VIBE"
+            text: root.agent === "copilot" ? "GITHUB COPILOT"
+              : root.agent === "agy" ? "ANTIGRAVITY"
+              : "MISTRAL VIBE"
             color: Color.accent
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.subtitle
@@ -511,7 +552,11 @@ Panel {
             leftAlign: true
             foreground: root.contentForeground
             hasCursor: root.selectedIndex === 2
-            enabled: root.availabilityChecked && root.agentInstalled() && !directoryCheck.running
+            enabled: root.availabilityChecked && root.agentInstalled()
+              && root.agent !== "agy" && !directoryCheck.running
+            tooltipText: root.agent === "agy"
+              ? "Agy picks sessions with /resume inside a running session."
+              : ""
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 2 }
             onClicked: root.launch(2)
           }

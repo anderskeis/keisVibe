@@ -1,16 +1,19 @@
 # Vibe Launcher for Omarchy
 
-A bar widget for [Mistral Vibe](https://github.com/mistralai/mistral-vibe) and
-[GitHub Copilot](https://github.com/github/copilot-cli) on Omarchy Quattro.
-Click **Vibe** to open a small, keyboard-friendly panel:
+A bar widget for [Mistral Vibe](https://github.com/mistralai/mistral-vibe),
+[GitHub Copilot](https://github.com/github/copilot-cli), and
+[Antigravity](https://github.com/google-antigravity/antigravity-cli) on
+Omarchy Quattro. Click **Vibe** to open a small, keyboard-friendly panel:
 
 ![Vibe launcher panel in the Omarchy bar](preview.png)
 
-- **Agent picker** switches between Mistral Vibe and GitHub Copilot with
-  Left/Right or by clicking the chips at the top.
+- **Agent picker** switches between Mistral Vibe, GitHub Copilot, and
+  Antigravity with Left/Right or by clicking the chips at the top.
 - **New session** starts an interactive session for the chosen agent.
 - **Continue last session** runs `<agent> --continue`.
-- **Choose a session** opens the agent's `--resume` picker.
+- **Choose a session** opens the `--resume` picker for Vibe and Copilot;
+  Antigravity picks sessions with `/resume` inside a running session, so the
+  row is disabled for it.
 - **Directory** sets where sessions start.
 
 Move with Up/Down, launch with Enter, Left/Right switches the agent, Esc
@@ -57,9 +60,11 @@ Requires Omarchy Quattro with the Quickshell plugin system, and Mistral
 Vibe on your `PATH` — install it with the
 [official instructions](https://github.com/mistralai/mistral-vibe#one-line-install-recommended)
 or `uv tool install mistral-vibe`. Vibe handles its own account setup and
-approval prompts; this widget only launches it. To launch GitHub Copilot
-sessions, the [Copilot CLI](https://github.com/github/copilot-cli/releases)
-must also be on your `PATH`; Vibe works without it.
+approval prompts; this widget only launches it. To launch Copilot or
+Antigravity sessions, the
+[Copilot CLI](https://github.com/github/copilot-cli/releases) or
+[Agy CLI](https://github.com/google-antigravity/antigravity-cli) must also
+be on your `PATH`; Vibe works without them.
 
 From a public GitHub repository containing these files at its root:
 
