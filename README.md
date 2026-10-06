@@ -1,18 +1,21 @@
 # Vibe Launcher for Omarchy
 
-A bar widget for [Mistral Vibe](https://github.com/mistralai/mistral-vibe) on
-Omarchy Quattro. Click **Vibe** to open a small, keyboard-friendly panel:
+A bar widget for [Mistral Vibe](https://github.com/mistralai/mistral-vibe) and
+[GitHub Copilot](https://github.com/github/copilot-cli) on Omarchy Quattro.
+Click **Vibe** to open a small, keyboard-friendly panel:
 
 ![Vibe launcher panel in the Omarchy bar](preview.png)
 
-- **New session** starts an interactive Vibe session.
-- **Continue last session** runs `vibe --continue`.
-- **Choose a session** opens Vibe's `--resume` picker.
-- **Directory** sets where Vibe sessions start.
+- **Agent picker** switches between Mistral Vibe and GitHub Copilot with
+  Left/Right or by clicking the chips at the top.
+- **New session** starts an interactive session for the chosen agent.
+- **Continue last session** runs `<agent> --continue`.
+- **Choose a session** opens the agent's `--resume` picker.
+- **Directory** sets where sessions start.
 
-Move with Up/Down, launch with Enter, Tab switches to a neighboring bar
-panel, Esc closes. Sessions start in `~/Work` if it exists, otherwise in
-your home directory.
+Move with Up/Down, launch with Enter, Left/Right switches the agent, Esc
+closes. Sessions start in `~/Work` if it exists, otherwise in your home
+directory.
 
 ## Working directory
 
@@ -54,7 +57,9 @@ Requires Omarchy Quattro with the Quickshell plugin system, and Mistral
 Vibe on your `PATH` — install it with the
 [official instructions](https://github.com/mistralai/mistral-vibe#one-line-install-recommended)
 or `uv tool install mistral-vibe`. Vibe handles its own account setup and
-approval prompts; this widget only launches it.
+approval prompts; this widget only launches it. To launch GitHub Copilot
+sessions, the [Copilot CLI](https://github.com/github/copilot-cli/releases)
+must also be on your `PATH`; Vibe works without it.
 
 From a public GitHub repository containing these files at its root:
 
