@@ -77,6 +77,17 @@ omarchy plugin enable keis.vibe --section right
 If a QML edit does not appear after a rescan, run `omarchy restart shell`
 to clear the shell's cached component.
 
+## Upgrade
+
+Installed plugins track this repository's default branch. Update with:
+
+```sh
+omarchy plugin update keis.vibe
+```
+
+What changed between versions is described on the
+[releases page](https://github.com/anderskeis/keisVibe/releases).
+
 ## Validate and publish
 
 ```sh
