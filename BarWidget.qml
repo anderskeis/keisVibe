@@ -76,7 +76,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.vertical ? "V" : "Vibe"
-    tooltipText: "Mistral Vibe launcher"
+    tooltipText: "Mistral Vibe or GitHub Copilot launcher"
     onPressed: root.toggle()
   }
 }

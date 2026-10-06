@@ -11,8 +11,12 @@ Panel {
 
   property var anchorItem: null
   property var hostWidget: null
-  property bool availabilityChecked: false
+  property string agent: "vibe"
+  property bool vibeChecked: false
+  property bool copilotChecked: false
+  readonly property bool availabilityChecked: vibeChecked && copilotChecked
   property bool vibeInstalled: false
+  property bool copilotInstalled: false
   property int selectedIndex: 0
   property string launchError: ""
   property int pendingLaunchIndex: -1
@@ -27,9 +31,11 @@ Panel {
   readonly property string homePath: Quickshell.env("HOME") || ""
 
   function refreshAvailability() {
-    availabilityChecked = false
+    vibeChecked = false
+    copilotChecked = false
     launchError = ""
-    if (!availabilityCheck.running) availabilityCheck.running = true
+    if (!vibeCheck.running) vibeCheck.running = true
+    if (!copilotCheck.running) copilotCheck.running = true
   }
 
   function open() {
@@ -49,14 +55,24 @@ Panel {
     else root.open()
   }
 
-  function switchPanel(direction) {
-    if (root.bar && typeof root.bar.switchPanelFrom === "function")
-      return root.bar.switchPanelFrom(root.hostWidget || root, direction)
-    return false
-  }
-
   function moveSelection(direction) {
     selectedIndex = (selectedIndex + direction + 4) % 4
+  }
+
+  function agentInstalled() {
+    return agent === "copilot" ? copilotInstalled : vibeInstalled
+  }
+
+  function agentMissingHint() {
+    return agent === "copilot"
+      ? "Copilot not found. Get it from: github.com/github/copilot-cli/releases"
+      : "Vibe not found. Install it with: uv tool install mistral-vibe"
+  }
+
+  function selectAgent(nextAgent) {
+    if (agent === nextAgent) return
+    agent = nextAgent
+    launchError = ""
   }
 
   function tildePath(path) {
@@ -95,8 +111,8 @@ Panel {
 
   function launch(index) {
     if (directoryCheck.running) return
-    if (!availabilityChecked || !vibeInstalled) {
-      launchError = "Vibe is not installed. Install it with: uv tool install mistral-vibe"
+    if (!availabilityChecked || !agentInstalled()) {
+      launchError = agentMissingHint()
       return
     }
 
@@ -122,11 +138,13 @@ Panel {
     directoryCheck.running = true
   }
 
-  function launchVibe(index, directory) {
+  function launchAgent(index, directory) {
+    var agentCommand = agent === "copilot" ? "copilot" : "vibe"
+    var agentAppId = agent === "copilot" ? "org.omarchy.copilot" : "org.omarchy.vibe"
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
     var command = [
       "bash", "-lc",
-      'dir="$1"; shift; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id=org.omarchy.vibe vibe "$@"',
+      'dir="$1"; shift; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id=' + agentAppId + ' ' + agentCommand + ' "$@"',
       "vibe-launcher", directory
     ].concat(args)
     Quickshell.execDetached(command)
@@ -290,6 +308,7 @@ Panel {
   function debugState(): string {
     return JSON.stringify({
       opened: root.opened,
+      agent: root.agent,
       pickerMode: pickerMode,
       dirError: dirError,
       pickedDirectory: pickedDirectory,
@@ -300,11 +319,20 @@ Panel {
   }
 
   Process {
-    id: availabilityCheck
+    id: vibeCheck
     command: ["bash", "-lc", "command -v vibe >/dev/null 2>&1"]
     onExited: function(exitCode) {
       root.vibeInstalled = exitCode === 0
-      root.availabilityChecked = true
+      root.vibeChecked = true
+    }
+  }
+
+  Process {
+    id: copilotCheck
+    command: ["bash", "-lc", "command -v copilot >/dev/null 2>&1"]
+    onExited: function(exitCode) {
+      root.copilotInstalled = exitCode === 0
+      root.copilotChecked = true
     }
   }
 
@@ -322,7 +350,7 @@ Panel {
           : "Cannot access working directory: " + root.tildePath(directory)
         return
       }
-      root.launchVibe(index, directory)
+      root.launchAgent(index, directory)
     }
   }
 
@@ -389,13 +417,12 @@ Panel {
       // Enter (confirm) and Esc (cancel) itself.
       blocked: root.pickerMode
       onCloseRequested: if (root.pickerMode) root.closePicker(); else root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
         if (root.pickerMode) return
         if (dy !== 0) root.moveSelection(dy)
+        else if (dx !== 0) root.selectAgent(root.agent === "vibe" ? "copilot" : "vibe")
       }
       onActivateRequested: if (!root.pickerMode) root.launch(root.selectedIndex)
-      onDeleteRequested: if (!root.pickerMode) root.resetDirectory()
       onTextKey: function(text) {
         if (root.pickerMode) return
         var key = text.toLowerCase()
@@ -403,6 +430,8 @@ Panel {
         else if (key === "c") root.launch(1)
         else if (key === "r") root.launch(2)
         else if (key === "d") root.openPicker()
+        else if (key === "v") root.selectAgent("vibe")
+        else if (key === "g") root.selectAgent("copilot")
       }
 
       Column {
@@ -415,10 +444,19 @@ Panel {
           spacing: Style.space(8)
           visible: !root.pickerMode
 
+          ButtonGroup {
+            width: parent.width
+            value: root.agent
+            options: [{ value: "vibe", label: "Vibe" }, { value: "copilot", label: "GH Copilot" }]
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onChanged: function(value) { root.selectAgent(value) }
+          }
+
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: "MISTRAL VIBE"
+            text: root.agent === "copilot" ? "GITHUB COPILOT" : "MISTRAL VIBE"
             color: Color.accent
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.subtitle
@@ -449,7 +487,7 @@ Panel {
             leftAlign: true
             foreground: root.contentForeground
             hasCursor: root.selectedIndex === 0
-            enabled: root.availabilityChecked && root.vibeInstalled && !directoryCheck.running
+            enabled: root.availabilityChecked && root.agentInstalled() && !directoryCheck.running
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 0 }
             onClicked: root.launch(0)
           }
@@ -461,7 +499,7 @@ Panel {
             leftAlign: true
             foreground: root.contentForeground
             hasCursor: root.selectedIndex === 1
-            enabled: root.availabilityChecked && root.vibeInstalled && !directoryCheck.running
+            enabled: root.availabilityChecked && root.agentInstalled() && !directoryCheck.running
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 1 }
             onClicked: root.launch(1)
           }
@@ -473,7 +511,7 @@ Panel {
             leftAlign: true
             foreground: root.contentForeground
             hasCursor: root.selectedIndex === 2
-            enabled: root.availabilityChecked && root.vibeInstalled && !directoryCheck.running
+            enabled: root.availabilityChecked && root.agentInstalled() && !directoryCheck.running
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 2 }
             onClicked: root.launch(2)
           }
@@ -509,7 +547,7 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            text: "Where Vibe sessions start."
+            text: "Where sessions start."
             color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.bodySmall
@@ -539,7 +577,7 @@ Panel {
 
           Button {
             width: parent.width
-            text: "Reset to default (~Work or home)"
+            text: "Reset to default (~/Work or home)"
             iconText: "\uf0e2"
             leftAlign: true
             fontSize: Style.font.bodySmall
@@ -554,9 +592,9 @@ Panel {
           text: root.pickerMode
             ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Tab Complete   Esc Cancel")
             : root.launchError !== "" ? root.launchError
-            : !root.availabilityChecked ? "Checking for Vibe..."
-            : root.vibeInstalled ? "↑↓ Move   Tab Switch   Esc Close"
-            : "Vibe not found. Install it with: uv tool install mistral-vibe"
+            : !root.availabilityChecked ? "Checking for agents..."
+            : root.agentInstalled() ? "↑↓ Move   ←→ Agent   Esc Close"
+            : root.agentMissingHint()
           color: root.dirError !== "" && root.pickerMode
             ? Color.urgent
             : root.launchError !== "" && !root.pickerMode ? Color.urgent : root.contentForeground
