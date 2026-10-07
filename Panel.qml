@@ -173,8 +173,8 @@ Panel {
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
     var command = [
       "bash", "-lc",
-      'dir="$1"; shift; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id=' + agentAppId + ' ' + agentCommand + ' "$@"',
-      "vibe-launcher", directory
+      'dir="$1"; appId="$2"; agentCmd="$3"; shift 3; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id="$appId" "$agentCmd" "$@"',
+      "vibe-launcher", directory, agentAppId, agentCommand
     ].concat(args)
     Quickshell.execDetached(command)
     root.close()
