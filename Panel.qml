@@ -26,6 +26,7 @@ Panel {
   property int pendingLaunchIndex: -1
   property string pendingDirectory: ""
   property string pickedDirectory: ""
+  property bool useDefaultDirectory: false
   property bool pickerMode: false
   property string dirError: ""
   property int completionSerial: 0
@@ -105,6 +106,7 @@ Panel {
 
   function displayDirectory() {
     if (pickedDirectory !== "") return tildePath(pickedDirectory)
+    if (useDefaultDirectory) return "~/Work (default)"
     var configured = root.setting("workDirectory", "~/Work")
     if (typeof configured === "string" && configured !== "" && configured !== "~/Work")
       return configured
@@ -142,6 +144,8 @@ Panel {
     var directory = ""
     if (pickedDirectory !== "") {
       directory = pickedDirectory
+    } else if (useDefaultDirectory) {
+      directory = ""
     } else {
       var resolved = resolveConfiguredDirectory()
       if (resolved.indexOf("error:") === 0) {
@@ -178,6 +182,7 @@ Panel {
 
   function directoryPrefill() {
     if (pickedDirectory !== "") return tildePath(pickedDirectory)
+    if (useDefaultDirectory) return "~/Work"
     var configured = root.setting("workDirectory", "~/Work")
     return typeof configured === "string" && configured !== "" ? configured : "~/Work"
   }
@@ -210,15 +215,16 @@ Panel {
       return
     }
     var directory = ""
-    if (text === "~") directory = homePath
-    else if (text.indexOf("~/") === 0) directory = homePath + text.substring(1)
+    if (text === "~" || text.indexOf("~/") === 0) {
+      if (homePath === "") {
+        dirError = "Cannot resolve your home directory."
+        return
+      }
+      directory = text === "~" ? homePath : homePath + text.substring(1)
+    }
     else if (text[0] === "/") directory = text
     else {
       dirError = "Use an absolute path or ~/path."
-      return
-    }
-    if (directory === "") {
-      dirError = "Cannot resolve your home directory."
       return
     }
     dirValidate.pendingPath = directory
@@ -232,6 +238,7 @@ Panel {
 
   function resetDirectory() {
     pickedDirectory = ""
+    useDefaultDirectory = true
     launchError = ""
     dirError = ""
     persistWorkDirectory("~/Work")
@@ -395,11 +402,13 @@ Panel {
       if (pendingPath === "") return
       var directory = pendingPath
       pendingPath = ""
+      if (!root.pickerMode) return
       if (exitCode !== 0) {
         root.dirError = "Not an accessible directory: " + root.tildePath(directory)
         return
       }
       root.pickedDirectory = directory
+      root.useDefaultDirectory = false
       root.launchError = ""
       root.persistWorkDirectory(directory)
       root.closePicker()
@@ -410,10 +419,15 @@ Panel {
     id: persistProc
     property string queuedValue: ""
     onExited: function(exitCode) {
-      if (queuedValue === "") return
-      var value = queuedValue
-      queuedValue = ""
-      root.startPersistWorkDirectory(value)
+      if (queuedValue !== "") {
+        var value = queuedValue
+        queuedValue = ""
+        root.startPersistWorkDirectory(value)
+        return
+      }
+      if (exitCode !== 0) {
+        root.launchError = "Failed to save working directory setting."
+      }
     }
   }
 
@@ -456,7 +470,11 @@ Panel {
         if (dy !== 0) root.moveSelection(dy)
         else if (dx !== 0) root.cycleAgent(dx > 0 ? 1 : -1)
       }
-      onActivateRequested: if (!root.pickerMode) root.launch(root.selectedIndex)
+      onActivateRequested: {
+        if (root.pickerMode) return
+        if (root.selectedIndex === 3) root.openPicker()
+        else root.launch(root.selectedIndex)
+      }
       onTextKey: function(text) {
         if (root.pickerMode) return
         var key = text.toLowerCase()
