@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "keis.vibe",
   "name": "Vibe Launcher",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": "keis",
   "license": "MIT",
   "description": "Launch and resume Mistral Vibe, GitHub Copilot, or Antigravity sessions from the Omarchy bar.",
