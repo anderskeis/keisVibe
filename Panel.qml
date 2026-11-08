@@ -43,6 +43,12 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string homePath: Quickshell.env("HOME") || ""
 
+  // Every dismissal path (Esc, outside click, IPC, popout switch, bar button)
+  // ends at controller.hide(), which flips `opened`. Resetting yoloMode on
+  // that transition covers all of them without depending on which close()
+  // override ran.
+  onOpenedChanged: if (!opened) yoloMode = false
+
   function refreshAvailability() {
     vibeChecked = false
     copilotChecked = false
