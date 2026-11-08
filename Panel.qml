@@ -25,10 +25,11 @@ Panel {
   property string launchError: ""
   property int pendingLaunchIndex: -1
   property string pendingDirectory: ""
-  // Snapshot of yoloMode taken when launch() is requested, so toggling the
-  // row while the directory check is still running cannot change the
-  // approval mode of the launch already in flight.
+  // Snapshots taken when launch() is requested, so toggling the yolo row or
+  // switching agents while the directory check is still running cannot
+  // change the approval mode or harness of the launch already in flight.
   property bool pendingYolo: false
+  property string pendingAgent: ""
   property string pickedDirectory: ""
   property bool useDefaultDirectory: false
   property bool pickerMode: false
@@ -61,6 +62,7 @@ Panel {
     pendingLaunchIndex = -1
     pendingDirectory = ""
     pendingYolo = false
+    pendingAgent = ""
     pickerMode = false
     yoloMode = false
     root.controller.hide()
@@ -107,11 +109,11 @@ Panel {
     launchError = ""
   }
 
-  // The flag that auto-approves tool calls for the selected agent. Agy has
+  // The flag that auto-approves tool calls for the given agent. Agy has
   // no --yolo flag; its auto execution mode is the closest equivalent, but
   // it still prompts before irreversible actions.
-  function yoloArgs() {
-    return agent === "agy" ? ["--mode=auto"] : ["--yolo"]
+  function yoloArgs(agentName) {
+    return agentName === "agy" ? ["--mode=auto"] : ["--yolo"]
   }
 
   function tildePath(path) {
@@ -179,6 +181,7 @@ Panel {
     pendingLaunchIndex = index
     pendingDirectory = directory
     pendingYolo = yoloMode
+    pendingAgent = agent
     directoryCheck.command = [
       "bash", "-c",
       'dir="$1"; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" 2>/dev/null',
@@ -187,13 +190,13 @@ Panel {
     directoryCheck.running = true
   }
 
-  function launchAgent(index, directory, yolo) {
-    var agentCommand = agent === "copilot" ? "copilot" : agent === "agy" ? "agy" : "vibe"
-    var agentAppId = agent === "copilot"
+  function launchAgent(index, directory, yolo, agentName) {
+    var agentCommand = agentName === "copilot" ? "copilot" : agentName === "agy" ? "agy" : "vibe"
+    var agentAppId = agentName === "copilot"
       ? "org.omarchy.copilot"
-      : agent === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
+      : agentName === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
-    if (yolo) args = yoloArgs().concat(args)
+    if (yolo) args = yoloArgs(agentName).concat(args)
     var command = [
       "bash", "-lc",
       'dir="$1"; appId="$2"; agentCmd="$3"; shift 3; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id="$appId" "$agentCmd" "$@"',
@@ -408,16 +411,18 @@ Panel {
       var index = root.pendingLaunchIndex
       var directory = root.pendingDirectory
       var yolo = root.pendingYolo
+      var agentName = root.pendingAgent
       root.pendingLaunchIndex = -1
       root.pendingDirectory = ""
       root.pendingYolo = false
+      root.pendingAgent = ""
       if (exitCode !== 0) {
         root.launchError = directory === ""
           ? "Cannot access ~/Work or your home directory."
           : "Cannot access working directory: " + root.tildePath(directory)
         return
       }
-      root.launchAgent(index, directory, yolo)
+      root.launchAgent(index, directory, yolo, agentName)
     }
   }
 
