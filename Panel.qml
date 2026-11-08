@@ -25,15 +25,29 @@ Panel {
   property string launchError: ""
   property int pendingLaunchIndex: -1
   property string pendingDirectory: ""
+  // Snapshots taken when launch() is requested, so toggling the yolo row or
+  // switching agents while the directory check is still running cannot
+  // change the approval mode or harness of the launch already in flight.
+  property bool pendingYolo: false
+  property string pendingAgent: ""
   property string pickedDirectory: ""
   property bool useDefaultDirectory: false
   property bool pickerMode: false
   property string dirError: ""
   property int completionSerial: 0
+  // Auto-approve toggle for the next launch. Reset to off on close so a
+  // yolo session is never started by accident on a later open.
+  property bool yoloMode: false
 
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string homePath: Quickshell.env("HOME") || ""
+
+  // Every dismissal path (Esc, outside click, IPC, popout switch, bar button)
+  // ends at controller.hide(), which flips `opened`. Resetting yoloMode on
+  // that transition covers all of them without depending on which close()
+  // override ran.
+  onOpenedChanged: if (!opened) yoloMode = false
 
   function refreshAvailability() {
     vibeChecked = false
@@ -53,7 +67,10 @@ Panel {
   function close() {
     pendingLaunchIndex = -1
     pendingDirectory = ""
+    pendingYolo = false
+    pendingAgent = ""
     pickerMode = false
+    yoloMode = false
     root.controller.hide()
   }
 
@@ -63,7 +80,7 @@ Panel {
   }
 
   function moveSelection(direction) {
-    selectedIndex = (selectedIndex + direction + 4) % 4
+    selectedIndex = (selectedIndex + direction + 5) % 5
   }
 
   function agentInstalled() {
@@ -91,6 +108,18 @@ Panel {
     var index = agentOrder.indexOf(agent)
     if (index < 0) index = 0
     selectAgent(agentOrder[((index + direction) % count + count) % count])
+  }
+
+  function toggleYolo() {
+    yoloMode = !yoloMode
+    launchError = ""
+  }
+
+  // The flag that auto-approves tool calls for the given agent. Agy has
+  // no --yolo flag; its auto execution mode is the closest equivalent, but
+  // it still prompts before irreversible actions.
+  function yoloArgs(agentName) {
+    return agentName === "agy" ? ["--mode=auto"] : ["--yolo"]
   }
 
   function tildePath(path) {
@@ -157,6 +186,8 @@ Panel {
 
     pendingLaunchIndex = index
     pendingDirectory = directory
+    pendingYolo = yoloMode
+    pendingAgent = agent
     directoryCheck.command = [
       "bash", "-c",
       'dir="$1"; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" 2>/dev/null',
@@ -165,12 +196,13 @@ Panel {
     directoryCheck.running = true
   }
 
-  function launchAgent(index, directory) {
-    var agentCommand = agent === "copilot" ? "copilot" : agent === "agy" ? "agy" : "vibe"
-    var agentAppId = agent === "copilot"
+  function launchAgent(index, directory, yolo, agentName) {
+    var agentCommand = agentName === "copilot" ? "copilot" : agentName === "agy" ? "agy" : "vibe"
+    var agentAppId = agentName === "copilot"
       ? "org.omarchy.copilot"
-      : agent === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
+      : agentName === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
+    if (yolo) args = yoloArgs(agentName).concat(args)
     var command = [
       "bash", "-lc",
       'dir="$1"; appId="$2"; agentCmd="$3"; shift 3; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id="$appId" "$agentCmd" "$@"',
@@ -346,6 +378,7 @@ Panel {
       pickedDirectory: pickedDirectory,
       dirText: pickerMode ? dirField.text : "",
       selectedIndex: selectedIndex,
+      yoloMode: yoloMode,
       workDirectory: root.setting("workDirectory", "~/Work")
     })
   }
@@ -383,15 +416,19 @@ Panel {
       if (root.pendingLaunchIndex < 0) return
       var index = root.pendingLaunchIndex
       var directory = root.pendingDirectory
+      var yolo = root.pendingYolo
+      var agentName = root.pendingAgent
       root.pendingLaunchIndex = -1
       root.pendingDirectory = ""
+      root.pendingYolo = false
+      root.pendingAgent = ""
       if (exitCode !== 0) {
         root.launchError = directory === ""
           ? "Cannot access ~/Work or your home directory."
           : "Cannot access working directory: " + root.tildePath(directory)
         return
       }
-      root.launchAgent(index, directory)
+      root.launchAgent(index, directory, yolo, agentName)
     }
   }
 
@@ -473,6 +510,7 @@ Panel {
       onActivateRequested: {
         if (root.pickerMode) return
         if (root.selectedIndex === 3) root.openPicker()
+        else if (root.selectedIndex === 4) root.toggleYolo()
         else root.launch(root.selectedIndex)
       }
       onTextKey: function(text) {
@@ -482,6 +520,7 @@ Panel {
         else if (key === "c") root.launch(1)
         else if (key === "r") root.launch(2)
         else if (key === "d") root.openPicker()
+        else if (key === "y") root.toggleYolo()
         else if (key === "v") root.selectAgent("vibe")
         else if (key === "g") root.selectAgent("copilot")
         else if (key === "a") root.selectAgent("agy")
@@ -590,6 +629,23 @@ Panel {
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 3 }
             onClicked: root.openPicker()
           }
+
+          Button {
+            width: parent.width
+            text: root.shorten("Yolo mode: " + (root.yoloMode ? "on" : "off"), 34)
+            iconText: "\uf54c"
+            leftAlign: true
+            fontSize: Style.font.bodySmall
+            foreground: root.yoloMode ? Color.urgent : root.contentForeground
+            hasCursor: root.selectedIndex === 4
+            tooltipText: "Auto-approve tool calls for this launch: "
+              + (root.agent === "agy"
+                ? "agy --mode=auto (still prompts before irreversible actions)"
+                : root.agent + " --yolo")
+              + ". Only use in a sandbox."
+            onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 4 }
+            onClicked: root.toggleYolo()
+          }
         }
 
         Column {
@@ -656,7 +712,7 @@ Panel {
             ? (root.dirError !== "" ? root.dirError : "Enter Confirm   Tab Complete   Esc Cancel")
             : root.launchError !== "" ? root.launchError
             : !root.availabilityChecked ? "Checking for agents..."
-            : root.agentInstalled() ? "↑↓ Move   ←→ Agent   Esc Close"
+            : root.agentInstalled() ? "↑↓ Move   ←→ Agent   Y Yolo   Esc Close"
             : root.agentMissingHint()
           color: root.dirError !== "" && root.pickerMode
             ? Color.urgent
