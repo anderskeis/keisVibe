@@ -25,6 +25,10 @@ Panel {
   property string launchError: ""
   property int pendingLaunchIndex: -1
   property string pendingDirectory: ""
+  // Snapshot of yoloMode taken when launch() is requested, so toggling the
+  // row while the directory check is still running cannot change the
+  // approval mode of the launch already in flight.
+  property bool pendingYolo: false
   property string pickedDirectory: ""
   property bool useDefaultDirectory: false
   property bool pickerMode: false
@@ -56,6 +60,7 @@ Panel {
   function close() {
     pendingLaunchIndex = -1
     pendingDirectory = ""
+    pendingYolo = false
     pickerMode = false
     yoloMode = false
     root.controller.hide()
@@ -102,8 +107,9 @@ Panel {
     launchError = ""
   }
 
-  // The flag that auto-approves every tool call for the selected agent.
-  // Agy has no --yolo flag; its auto execution mode is the equivalent.
+  // The flag that auto-approves tool calls for the selected agent. Agy has
+  // no --yolo flag; its auto execution mode is the closest equivalent, but
+  // it still prompts before irreversible actions.
   function yoloArgs() {
     return agent === "agy" ? ["--mode=auto"] : ["--yolo"]
   }
@@ -172,6 +178,7 @@ Panel {
 
     pendingLaunchIndex = index
     pendingDirectory = directory
+    pendingYolo = yoloMode
     directoryCheck.command = [
       "bash", "-c",
       'dir="$1"; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" 2>/dev/null',
@@ -180,13 +187,13 @@ Panel {
     directoryCheck.running = true
   }
 
-  function launchAgent(index, directory) {
+  function launchAgent(index, directory, yolo) {
     var agentCommand = agent === "copilot" ? "copilot" : agent === "agy" ? "agy" : "vibe"
     var agentAppId = agent === "copilot"
       ? "org.omarchy.copilot"
       : agent === "agy" ? "org.omarchy.agy" : "org.omarchy.vibe"
     var args = index === 0 ? [] : index === 1 ? ["--continue"] : ["--resume"]
-    if (yoloMode) args = yoloArgs().concat(args)
+    if (yolo) args = yoloArgs().concat(args)
     var command = [
       "bash", "-lc",
       'dir="$1"; appId="$2"; agentCmd="$3"; shift 3; if [ -z "$dir" ]; then if [ -d "$HOME/Work" ]; then dir="$HOME/Work"; else dir="$HOME"; fi; fi; cd -- "$dir" || exit 1; exec omarchy-launch-tui --app-id="$appId" "$agentCmd" "$@"',
@@ -400,15 +407,17 @@ Panel {
       if (root.pendingLaunchIndex < 0) return
       var index = root.pendingLaunchIndex
       var directory = root.pendingDirectory
+      var yolo = root.pendingYolo
       root.pendingLaunchIndex = -1
       root.pendingDirectory = ""
+      root.pendingYolo = false
       if (exitCode !== 0) {
         root.launchError = directory === ""
           ? "Cannot access ~/Work or your home directory."
           : "Cannot access working directory: " + root.tildePath(directory)
         return
       }
-      root.launchAgent(index, directory)
+      root.launchAgent(index, directory, yolo)
     }
   }
 
@@ -618,8 +627,10 @@ Panel {
             fontSize: Style.font.bodySmall
             foreground: root.yoloMode ? Color.urgent : root.contentForeground
             hasCursor: root.selectedIndex === 4
-            tooltipText: "Auto-approve every tool call for this launch: "
-              + (root.agent === "agy" ? "agy --mode=auto" : root.agent + " --yolo")
+            tooltipText: "Auto-approve tool calls for this launch: "
+              + (root.agent === "agy"
+                ? "agy --mode=auto (still prompts before irreversible actions)"
+                : root.agent + " --yolo")
               + ". Only use in a sandbox."
             onHovered: function(isHovered) { if (isHovered) root.selectedIndex = 4 }
             onClicked: root.toggleYolo()
