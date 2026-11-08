@@ -15,10 +15,14 @@ Omarchy Quattro. Click **Vibe** to open a small, keyboard-friendly panel:
   Antigravity picks sessions with `/resume` inside a running session, so the
   row is disabled for it.
 - **Directory** sets where sessions start.
+- **Yolo mode** auto-approves every tool call for the launch: Vibe and
+  Copilot get `--yolo`, Antigravity gets `--mode=auto` (it has no `--yolo`
+  flag). Only use it in a sandbox. The toggle resets to off when the panel
+  closes.
 
-Move with Up/Down, launch with Enter, Left/Right switches the agent, Esc
-closes. Sessions start in `~/Work` if it exists, otherwise in your home
-directory.
+Move with Up/Down, launch with Enter, Left/Right switches the agent, `Y`
+toggles yolo mode, Esc closes. Sessions start in `~/Work` if it exists,
+otherwise in your home directory.
 
 ## Working directory
 
